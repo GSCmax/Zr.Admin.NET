@@ -1,4 +1,5 @@
 ﻿using SqlSugar.IOC;
+using System.Data.Common;
 using ZR.Model;
 using ZR.Model.Content;
 using ZR.Model.Models;
@@ -27,8 +28,16 @@ namespace ZR.ServiceCore.SqlSugar
 
             if (!init) return;
             StaticConfig.CodeFirst_MySqlCollate = "utf8mb4_general_ci";
-            //建库：如果不存在创建数据库存在不会重复创建 
-            db.DbMaintenance.CreateDatabase();// 注意 ：Oracle和个别国产库需不支持该方法，需要手动建库 
+            var config = db.CurrentConnectionConfig;
+            if (config.DbType == DbType.Sqlite)
+            {
+                EnsureSqliteDatabaseFile(config.ConnectionString);
+            }
+            else
+            {
+                //建库：如果不存在创建数据库存在不会重复创建 
+                db.DbMaintenance.CreateDatabase();// 注意 ：Oracle和个别国产库需不支持该方法，需要手动建库 
+            }
 
             db.CodeFirst.InitTables(typeof(SysUser));
             db.CodeFirst.InitTables(typeof(SysRole));
@@ -68,6 +77,38 @@ namespace ZR.ServiceCore.SqlSugar
             //db.CodeFirst.InitTables(typeof(SocialFansInfo));
             //db.CodeFirst.InitTables(typeof(UserOnlineLog));
         }
+
+        private static void EnsureSqliteDatabaseFile(string connectionString)
+        {
+            var connStringBuilder = new DbConnectionStringBuilder { ConnectionString = connectionString };
+            if (!connStringBuilder.TryGetValue("Data Source", out var dataSourceObj))
+            {
+                return;
+            }
+
+            var dataSource = dataSourceObj?.ToString();
+            if (string.IsNullOrWhiteSpace(dataSource) || dataSource.Equals(":memory:", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            if (!Path.IsPathRooted(dataSource))
+            {
+                dataSource = Path.Combine(AppContext.BaseDirectory, dataSource);
+            }
+
+            var directory = Path.GetDirectoryName(dataSource);
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            if (!File.Exists(dataSource))
+            {
+                using var _ = File.Create(dataSource);
+            }
+        }
+
         public static void InitNewTb()
         {
             var db = DbScoped.SugarScope;

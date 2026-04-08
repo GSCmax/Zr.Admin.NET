@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using SqlSugar.IOC;
+using System.Data.Common;
 using ZR.Common;
 using ZR.Model.System;
 
@@ -26,10 +27,11 @@ namespace ZR.ServiceCore.SqlSugar
             var iocList = new List<IocConfig>();
             foreach (var item in dbConfigs)
             {
+                var conn = SqlsugarSetup.NormalizeConnectionString(item, environment.ContentRootPath);
                 iocList.Add(new IocConfig()
                 {
                     ConfigId = item.ConfigId,
-                    ConnectionString = item.Conn,
+                    ConnectionString = conn,
                     DbType = (IocDbType)item.DbType,
                     IsAutoCloseConnection = item.IsAutoCloseConnection
                 });
@@ -58,12 +60,93 @@ namespace ZR.ServiceCore.SqlSugar
                 });
             });
 
+            var shouldInitDb = options.InitDb || IsFirstRunSqlite(options.DbConfigs, environment.ContentRootPath);
+            if (shouldInitDb)
+            {
+                InitTable.InitDb(true);
+            }
+
             if (environment.IsDevelopment())
             {
-                InitTable.InitDb(options.InitDb);
-
                 InitTable.InitNewTb();
             }
+        }
+
+
+        internal static string NormalizeConnectionString(DbConfigs config, string basePath)
+        {
+            if ((IocDbType)config.DbType != IocDbType.Sqlite)
+            {
+                return config.Conn;
+            }
+
+            var connStringBuilder = new DbConnectionStringBuilder { ConnectionString = config.Conn };
+            if (!connStringBuilder.TryGetValue("Data Source", out var dataSourceObj))
+            {
+                return config.Conn;
+            }
+
+            var dataSource = dataSourceObj?.ToString();
+            if (string.IsNullOrWhiteSpace(dataSource) || dataSource.Equals(":memory:", StringComparison.OrdinalIgnoreCase))
+            {
+                return config.Conn;
+            }
+
+            if (!Path.IsPathRooted(dataSource))
+            {
+                dataSource = Path.Combine(basePath, dataSource);
+                connStringBuilder["Data Source"] = dataSource;
+                return connStringBuilder.ConnectionString;
+            }
+
+            return config.Conn;
+        }
+
+        private static bool IsFirstRunSqlite(List<DbConfigs> dbConfigs, string basePath)
+        {
+            if (dbConfigs == null || dbConfigs.Count == 0)
+            {
+                return false;
+            }
+
+            foreach (var config in dbConfigs)
+            {
+                if ((IocDbType)config.DbType != IocDbType.Sqlite)
+                {
+                    continue;
+                }
+
+                var conn = SqlsugarSetup.NormalizeConnectionString(config, basePath);
+                var connStringBuilder = new DbConnectionStringBuilder { ConnectionString = conn };
+                if (!connStringBuilder.TryGetValue("Data Source", out var dataSourceObj))
+                {
+                    continue;
+                }
+
+                var dataSource = dataSourceObj?.ToString();
+                if (string.IsNullOrWhiteSpace(dataSource) || dataSource.Equals(":memory:", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!Path.IsPathRooted(dataSource))
+                {
+                    dataSource = Path.Combine(basePath, dataSource);
+                }
+
+                if (!File.Exists(dataSource))
+                {
+                    var directory = Path.GetDirectoryName(dataSource);
+                    if (!string.IsNullOrWhiteSpace(directory))
+                    {
+                        Directory.CreateDirectory(directory);
+                    }
+
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>
