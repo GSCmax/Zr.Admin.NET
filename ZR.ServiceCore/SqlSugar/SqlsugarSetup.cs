@@ -27,7 +27,7 @@ namespace ZR.ServiceCore.SqlSugar
             var iocList = new List<IocConfig>();
             foreach (var item in dbConfigs)
             {
-                var conn = SqlsugarSetup.NormalizeConnectionString(item, environment.ContentRootPath);
+                var conn = NormalizeConnectionString(item, environment.ContentRootPath);
                 iocList.Add(new IocConfig()
                 {
                     ConfigId = item.ConfigId,
@@ -60,7 +60,7 @@ namespace ZR.ServiceCore.SqlSugar
                 });
             });
 
-            var shouldInitDb = options.InitDb || IsFirstRunSqlite(options.DbConfigs, environment.ContentRootPath);
+            var shouldInitDb = options.InitDb || IsFirstRunSqlite(options.DbConfigs);
             if (shouldInitDb)
             {
                 InitTable.InitDb(true);
@@ -73,36 +73,7 @@ namespace ZR.ServiceCore.SqlSugar
         }
 
 
-        internal static string NormalizeConnectionString(DbConfigs config, string basePath)
-        {
-            if ((IocDbType)config.DbType != IocDbType.Sqlite)
-            {
-                return config.Conn;
-            }
-
-            var connStringBuilder = new DbConnectionStringBuilder { ConnectionString = config.Conn };
-            if (!connStringBuilder.TryGetValue("Data Source", out var dataSourceObj))
-            {
-                return config.Conn;
-            }
-
-            var dataSource = dataSourceObj?.ToString();
-            if (string.IsNullOrWhiteSpace(dataSource) || dataSource.Equals(":memory:", StringComparison.OrdinalIgnoreCase))
-            {
-                return config.Conn;
-            }
-
-            if (!Path.IsPathRooted(dataSource))
-            {
-                dataSource = Path.Combine(basePath, dataSource);
-                connStringBuilder["Data Source"] = dataSource;
-                return connStringBuilder.ConnectionString;
-            }
-
-            return config.Conn;
-        }
-
-        private static bool IsFirstRunSqlite(List<DbConfigs> dbConfigs, string basePath)
+        private static bool IsFirstRunSqlite(List<DbConfigs> dbConfigs)
         {
             if (dbConfigs == null || dbConfigs.Count == 0)
             {
@@ -116,8 +87,7 @@ namespace ZR.ServiceCore.SqlSugar
                     continue;
                 }
 
-                var conn = SqlsugarSetup.NormalizeConnectionString(config, basePath);
-                var connStringBuilder = new DbConnectionStringBuilder { ConnectionString = conn };
+                var connStringBuilder = new DbConnectionStringBuilder { ConnectionString = config.Conn };
                 if (!connStringBuilder.TryGetValue("Data Source", out var dataSourceObj))
                 {
                     continue;
@@ -131,7 +101,7 @@ namespace ZR.ServiceCore.SqlSugar
 
                 if (!Path.IsPathRooted(dataSource))
                 {
-                    dataSource = Path.Combine(basePath, dataSource);
+                    dataSource = Path.Combine(AppContext.BaseDirectory, dataSource);
                 }
 
                 if (!File.Exists(dataSource))
