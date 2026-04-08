@@ -27,10 +27,11 @@ namespace ZR.ServiceCore.SqlSugar
             var iocList = new List<IocConfig>();
             foreach (var item in dbConfigs)
             {
+                var conn = NormalizeConnectionString(item, environment.ContentRootPath);
                 iocList.Add(new IocConfig()
                 {
                     ConfigId = item.ConfigId,
-                    ConnectionString = item.Conn,
+                    ConnectionString = conn,
                     DbType = (IocDbType)item.DbType,
                     IsAutoCloseConnection = item.IsAutoCloseConnection
                 });
