@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using SqlSugar.IOC;
+using System.Data.Common;
 using ZR.Common;
 using ZR.Model.System;
 
@@ -58,12 +59,63 @@ namespace ZR.ServiceCore.SqlSugar
                 });
             });
 
+            var shouldInitDb = options.InitDb || IsFirstRunSqlite(options.DbConfigs);
+            if (shouldInitDb)
+            {
+                InitTable.InitDb(true);
+            }
+
             if (environment.IsDevelopment())
             {
-                InitTable.InitDb(options.InitDb);
-
                 InitTable.InitNewTb();
             }
+        }
+
+
+        private static bool IsFirstRunSqlite(List<DbConfigs> dbConfigs)
+        {
+            if (dbConfigs == null || dbConfigs.Count == 0)
+            {
+                return false;
+            }
+
+            foreach (var config in dbConfigs)
+            {
+                if ((IocDbType)config.DbType != IocDbType.Sqlite)
+                {
+                    continue;
+                }
+
+                var connStringBuilder = new DbConnectionStringBuilder { ConnectionString = config.Conn };
+                if (!connStringBuilder.TryGetValue("Data Source", out var dataSourceObj))
+                {
+                    continue;
+                }
+
+                var dataSource = dataSourceObj?.ToString();
+                if (string.IsNullOrWhiteSpace(dataSource) || dataSource.Equals(":memory:", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!Path.IsPathRooted(dataSource))
+                {
+                    dataSource = Path.Combine(AppContext.BaseDirectory, dataSource);
+                }
+
+                if (!File.Exists(dataSource))
+                {
+                    var directory = Path.GetDirectoryName(dataSource);
+                    if (!string.IsNullOrWhiteSpace(directory))
+                    {
+                        Directory.CreateDirectory(directory);
+                    }
+
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>
